@@ -5,16 +5,22 @@
 import os
 import sys
 import time
-import datetime
+# import datetime
+from datetime import datetime
 import serial
 # import logging
 from utils import *
 # import struct
 # from array import *
 import traceback
+import pprint
+import csv
 
 LOGGER = logging.getLogger("PV_Tester")
 
+pp = pprint.PrettyPrinter(indent=4).pprint
+pp_str = pprint.PrettyPrinter(indent=4).pformat
+pp_str2 = pprint.PrettyPrinter(indent=2).pformat
 '''
 > ls /dev/*serial*
 /dev/cu.usbserial  /dev/tty.usbserial
@@ -41,28 +47,6 @@ cmd_dict = {
     "I_MEASURE" : 0x0126 }
 
 
-'''
-Generate C language function of CRC check code:
-    unsigned short Get_CRC16RTU(volatile unsigned char *ptr,unsigned char len) {
-        unsigned char i;
-        unsigned short crc = 0xFFFF; 
-        if(len == 0) 
-            len = 1;
-        while (len--) {
-            crc ^= *ptr; 
-            for(i=0; i<8; i++) {
-                if(crc&1) {
-                    crc >>= 1; 
-                    crc ^= 0xA001;
-                } else {
-                    crc >>= 1;
-                }
-            ptr++; 
-        }
-        return(crc); 
-    }
-
-'''
 
 def create_logger(name="dummy", level=logging.DEBUG, record_format=None):
     """Create a logger according to the given settings"""
@@ -116,7 +100,7 @@ def send_cmd_bytes(cmd):
 
     cmd.extend(my_crc)
 
-    logger.info(f"Final Cmd {[hex(x) for x in cmd]}, {cmd_len=}")
+    # logger.info(f"Final Cmd {[hex(x) for x in cmd]}, {cmd_len=}")
 
     # serial.Serial(port=PORT, baudrate=9600, bytesize=8, parity='N', stopbits=1, xonxoff=0)
     # Set read timeout to 3 Sec
@@ -130,7 +114,7 @@ def send_cmd_bytes(cmd):
     read_buf = []
     read_buf_len = len(read_buf)
 
-    startTimer = datetime.datetime.now()
+    startTimer = datetime.now()
 
     empty_reads = 0;
     while True:
@@ -141,14 +125,6 @@ def send_cmd_bytes(cmd):
         # read_buf.append(po.read())
         temp_buf = po.read()
 
-        # if len(read_buf) != read_buf_len:
-        #     logger.info(f"now read_buf is: {read_buf}")
-        #     try:
-        #         logger.info(f"now {[hex(x) for x in read_buf]}")
-        #     except TypeError:
-        #         pass
-        #
-        #     read_buf_len = len(read_buf)
         if len(temp_buf):
             # logger.info(f"Appending {temp_buf}")
             read_buf.append(temp_buf)
@@ -159,43 +135,6 @@ def send_cmd_bytes(cmd):
             empty_reads += 1
             # read_buf.append(0xFF)
             break;
-
-        if empty_reads > 1:
-            break
-
-        #
-        # try:
-        #     last_buffer_item = read_buf[-1]
-        #     logger.info(f"last buffer: {type(last_buffer_item)}:{repr(last_buffer_item)}")
-        #     if not last_buffer_item:
-        #         logger.info(f"NULL")
-        #
-        # except Exception as exc:
-        #     exc_type, exc_obj, exc_tb = sys.exc_info()
-        #     fqfname = exc_tb.tb_frame.f_code.co_filename
-        #     fname = os.path.split(fqfname)[1]
-        #     traceback.print_exception(exc_type, exc_obj, exc_tb)
-        #
-        # # logger.info(f"{empty_reads=}, {rb_len=}, last buf <{ord(read_buf[-1])}>")
-        # logger.info(f"{empty_reads=}, {rb_len=}")
-        # if read_buf_len == rb_len:
-        #     empty_reads += 1
-        # else:
-        #     read_buf_len = rb_len
-        #
-        # if empty_reads > 5:
-        #     logger.info(f"{empty_reads=} - DONE")
-        #     break
-        #
-        # # if len(read_buf) >= len(cmd):
-        # #     logger.info(f"Length of buffer exceeds original command length")
-        # #     break
-
-    # try:
-    #     logger.info(f"RESPONSE : {[hex(x) for x in read_buf if x]}")
-    # except TypeError:
-    #     logger.info(f"RESPONSE NON-ARRAY: {read_buf}")
-    #     pass
 
     return read_buf
 
@@ -218,87 +157,16 @@ def send_cmd(reg_addr, reg_value ):
 
     response = send_cmd_bytes(cmd_base)
 
-    # logger.info(f"RESPONSE length : {len(response)}, {type(response)}")
-    # for  e_idx, e in enumerate(response):
-    #     if not e:
-    #         continue
-    #     logger.info(f"incoming response[{e_idx}] is {type(response[e_idx])}: {ord(response[e_idx])} Check: {repr(response[e_idx])}")
+    # logger.info(f"RESPONSE : {[hex((ord(x))) for x in response if x]}")
 
-
-    logger.info(f"RESPONSE : {[hex((ord(x))) for x in response if x]}")
-    # try:
-    #     logger.info(f"final RESPONSE : {[hex(x) for x in response]}")
-    # except TypeError:
-    #     logger.info(f"final RESPONSE NON-ARRAY: {response}")
-    #     pass
-
-
-    # response_val = bytes(response[5:9])
-    # response_val_str = b''.join(response[5:9])
-    # response_val_str = '%02X'.join(response[5:9])
-    # response_val_str = f"{format(response[5], '%02X')}"
-    # logger.info(f"{response=}")
-
-    response_int = int.from_bytes([ord(x) for x in response[5:9]], "big")
-    logger.info(f"Response as integer {type(response_int)}: {response_int}")
-
-    # for  e_idx, e in enumerate(response[5:9]):     # also try repr()
-    #     e_offset = e_idx + 5
-    #     logger.info(f"incoming response[{e_offset}] is {type(response[e_offset])}: {ord(response[e_offset])} Check: {repr(response[e_offset])}")
-    #     # logger.info(f"incoming response[{e_offset}] is {type(response[e_offset])}")
-    #
-    # response_bytes = bytearray()
-    # logger.info(f"initial response_bytes {response_bytes=}")
-    # for e_idx, e in enumerate(response[5:9]):     # also try repr()
-    #     e_offset = e_idx + 5
-    #     logger.info(f"to append {type(e)}: {ord(e)} Check: {repr(e)}")
-    #     # response_bytes.append(e)
-    #     response_bytes.extend(e)
-    #     logger.info(f"[{e_idx}] {repr(response_bytes)=}")
-    #
-    # logger.info(f"FINAL {type(response_bytes)}: {response_bytes}")
-    #
-    # response_int = int.from_bytes(response_bytes, "big")
-    # logger.info(f"FINAL as integer  {type(response_int)}: {response_int}")
-    #
-    #
-    # #response_list = [hex(ord(x)) for x in response[5:9]]
-    # response_list = [ord(x) for x in response[5:9]]
-    # logger.info(f"response response_bytes ---> Elements List {type(response_list)}: {response_list}")
-    #
-    # # response_list = struct.unpack("<I", bytearray([hex(ord(x)) for x in response[5:9]]))[0]
-    # # response_list = struct.pack("@4B", *[ord(response[5]), ord(response[6]), ord(response[7]), ord(response[8])])
-    # # response_list = array.array.fromlist([ord(response[5]), ord(response[6]), ord(response[7]), ord(response[8])])
-    #
-    # response_list2 = array('I')
-    # response_list2 = response_list2.fromlist([int(x) for x in response[5:9]]) # fromlist([ord(response[5]), ord(response[6]), ord(response[7]), ord(response[8])])
-    # logger.info(f"response 2 Elements Lis t {type(response_list2)}: {response_list2}")
-    #
-    #
-    #
-    # print(f"Elements List {type(response[5:9])}: {response[5:9]}")
-    # response_list = response[5] + response[6] + response[7] + response[8]
-    # print(f"response Elements List {type(response_list)}: {response_list}")
-    # response_list_as = bytes(response[5])
-    # print(f"{type(response_list_as)}: {response_list_as}")
-    #
-    # response_bytes = bytearray()
-    # logger.info(f"--> {response_bytes=}")
-    # response_val = int.from_bytes(response[5:9], "little")
-    # logger.info(f"Response value bytes {response_val=}")
-    # int_value = struct.unpack("<I", bytearray(response_val))[0]
-    # # int_val = int.from_bytes(response_val, "big")
-    #
-    # logger.info(f"Numeric response is {int_val=}")
-
+    # response_int = int.from_bytes([ord(x) for x in response[5:9]], "big")
+    # logger.info(f"Response as integer {type(response_int)}: {response_int}")
     return
 
-def read_cmd():
+
+def read_cmd(panelSN):
     """
     """
-
-    #01 03 03 00 00 00 8E 45
-
     cmd_base = [0x01,     # device address
                 0x03,     # read the instruction number of register.
                 0x03, 0,  # read the special defined address of the common register bank.
@@ -306,36 +174,15 @@ def read_cmd():
 
     response = send_cmd_bytes(cmd_base)
 
-    # logger.info(f"RESPONSE length : {len(response)}, {type(response)}")
-    # for  e_idx, e in enumerate(response):
-    #     if not e:
-    #         continue
-    #     logger.info(f"incoming response[{e_idx}] is {type(response[e_idx])}: {ord(response[e_idx])} Check: {repr(response[e_idx])}")
-
-
-    # logger.info(f"READ RESPONSE : " + str([ f'{ord(x):#02X}' for x in response if x]))
-    logger.info(f"READ RESPONSE : " + str(' '.join('%02x'%ord(i) for i in response if i)))
-
-    # try:
-    #     logger.info(f"final RESPONSE : {[hex(x) for x in response]}")
-    # except TypeError:
-    #     logger.info(f"final RESPONSE NON-ARRAY: {response}")
-    #     pass
-
-
-    # response_val = bytes(response[5:9])
-    # response_val_str = b''.join(response[5:9])
-    # response_val_str = '%02X'.join(response[5:9])
-    # response_val_str = f"{format(response[5], '%02X')}"
-    # logger.info(f"{response=}")
+    # logger.info(f"READ RESPONSE : " + str(' '.join('%02x'%ord(i) for i in response if i)))
 
     response_int = int.from_bytes([ord(x) for x in response[5:9]], "big")
-    logger.info(f"Response as integer {type(response_int)}: {response_int}")
+    # logger.info(f"Response as integer {type(response_int)}: {response_int}")
 
     milivolts = int.from_bytes([ord(x) for x in response[5:8]], "big")
 
     milliamps = int.from_bytes([ord(x) for x in response[8:11]], "big")
-    logger.info(f"READ milliamps: " + str(''.join('%02x' % ord(i) for i in response[8:11] if i)) + f" which is {milliamps} milliamps")
+    # logger.info(f"READ milliamps: " + str(''.join('%02x' % ord(i) for i in response[8:11] if i)) + f" which is {milliamps} milliamps")
 
     mode_state = ord(response[3])
     state = mode_state & 0x1
@@ -351,7 +198,8 @@ def read_cmd():
     else:
         logger.error(f"ERROR: unrecognized pattern for mode_state: {mode:#x}")
 
-    rv = {"state": state,
+    rv = {"panelSN": panelSN,
+          "state": state,
           "mode_str": mode_str,
           "volts": milivolts/1000,
           "amps": milliamps/1000,
@@ -360,33 +208,46 @@ def read_cmd():
     return rv
 
 
-def main():
-    """main"""
+def run_test(panelSN=None):
+    def timestamp():
+        ts_str =  f"{datetime.now().strftime('%Y%m%d_%H%M%S.%f')}"
+        return ts_str[:-4]
+
     global logger, po
 
-    # logger = modbus_tk.utils.create_logger("console")
-    logger = create_logger("console")
-
-    po = serial.Serial(port=PORT, baudrate=115200, timeout=0.5) # , timeout=0.2)
-
-    logger.info(f"Set Load OFF ")
-    send_cmd(cmd_dict["LOAD_ONOFF"], 0)
+    test_readings = []
 
     # Capture VOC
-    VOC_readings = read_cmd()
+    VOC_readings = read_cmd(panelSN)
     logger.info(f"Readings: {VOC_readings}")
-
-    time.sleep(3)
 
     logger.info(f"set CR mode: (Constant Resistance)")
     send_cmd(cmd_dict["LOAD_MODE"], mode_dict['CR'])
 
-
     logger.info(f"set initial Load resistance ")
-    for r in range(200, 0, -10):
+    r = 150
+    logger.info(f"Set to {r/10} ohms")
+    send_cmd(cmd_dict["CR_SETTING"], r)
+
+    VOC_readings['resistance'] = r
+    VOC_readings['timestamp'] = timestamp()
+    test_readings.append(VOC_readings)
+
+    logger.info(f"Set Load ON ")
+    send_cmd(cmd_dict["LOAD_ONOFF"], 1)
+
+    logger.info(f"Run test for decreasing Load resistance ")
+    # for r in range(200, 0, -10):
+    for r in range(200, 50, -10):
+        # readings=None
         logger.info(f"Set to {r/10} ohms")
         send_cmd(cmd_dict["CR_SETTING"], r)
-    print()
+        readings = read_cmd(panelSN)
+        readings['resistance'] = r
+        readings['timestamp'] = timestamp()
+        test_readings.append(readings)
+
+        logger.info(f"Readings: {readings}")
 
     '''
     logger.info(f"Try to set Load Ohms")
@@ -397,14 +258,59 @@ def main():
     print()
     time.sleep(3)
     '''
+    logger.info(f"Set Load OFF ")
+    send_cmd(cmd_dict["LOAD_ONOFF"], 0)
 
-    #01 03 03 00 00 00 8E 45      read voltage, current
-    readings = read_cmd()
-    logger.info(f"Readings: {readings}")
+    # print(f"Test Results:\n {pp_str(test_readings)}")
+    # print(f"Test Results:\n {[pp_str(x) for x in test_readings]}")
+    # print(f"Test Results:\n {test_readings}")
 
 
+    return test_readings
 
-    sys.exit()
+
+def main():
+    """main"""
+    global logger, po
+
+    logger = create_logger("console")
+
+    po = serial.Serial(port=PORT, baudrate=115200, timeout=0.5) # , timeout=0.2)
+
+    logger.info(f"Set Load OFF ")
+    send_cmd(cmd_dict["LOAD_ONOFF"], 0)
+
+    panelSN = input("Panel S/N? :")
+
+    while True:
+        print(f"{panelSN=}")
+        if len(panelSN) == 12:
+            break
+        print(f"Try again, or enter (blank) to quit")
+        panelSN = input("Panel S/N? (or text) ")
+        if len(panelSN):
+            break
+        if not len(panelSN):
+            sys.exit()
+
+
+    out_dir = "./results/"
+    file_name = out_dir + f"MPPT_Test_{panelSN}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+
+    logger.info(f"panelSN is {panelSN}")
+
+    results = run_test(panelSN)
+    logger.info(f"{results[0]}")
+    # header = getList(results[0])
+    logger.info(f"{results[0].keys()}")
+    header = list(results[0].keys())
+
+    with open(file_name, 'w', encoding='UTF8', newline='') as f:
+        writer = csv.DictWriter(f, fieldnames=header)
+        writer.writeheader()
+        writer.writerows(results)
+
+    logger.info(f"Results in {file_name}")
 
 
 if __name__ == "__main__":
