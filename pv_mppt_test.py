@@ -297,12 +297,9 @@ def main():
     out_dir = "./results/"
     file_name = out_dir + f"MPPT_Test_{panelSN}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
 
-    logger.info(f"panelSN is {panelSN}")
+    logger.info(f"panelSN is {panelSN}\n")
 
     results = run_test(panelSN)
-    logger.info(f"{results[0]}")
-    # header = getList(results[0])
-    logger.info(f"{results[0].keys()}")
     header = list(results[0].keys())
 
     with open(file_name, 'w', encoding='UTF8', newline='') as f:
@@ -310,7 +307,7 @@ def main():
         writer.writeheader()
         writer.writerows(results)
 
-    logger.info(f"Results in {file_name}")
+    logger.info(f"\nResults in {file_name}\n")
 
 
 if __name__ == "__main__":
