@@ -3,6 +3,9 @@
 
 
 import os
+# from os.path import  *
+import os.path
+
 import sys
 import time
 # import datetime
@@ -28,6 +31,13 @@ pp_str2 = pprint.PrettyPrinter(indent=2).pformat
 
 PORT = 1
 PORT = '/dev/cu.usbserial'
+PORT = '/dev/cu.usbserial-14110'
+OUTDIR = '/Users/apple/Downloads/PV_Panel_MPPT_Results'
+
+START_RESISTANCE =   400        # in ohms * 10
+END_RESISTANCE   =   40
+RESISTANCE_STEP  =   -5
+
 logger = {}
 po = None
 
@@ -198,12 +208,13 @@ def read_cmd(panelSN):
     else:
         logger.error(f"ERROR: unrecognized pattern for mode_state: {mode:#x}")
 
-    rv = {"panelSN": panelSN,
+    rv = {"Volts": milivolts/1000.0,
+          "volts": milivolts/1000.0,
+          "amps": milliamps/1000.0,
+          "watts":  round((milivolts/1000.0) * (milliamps/1000.0), 2),
           "state": state,
           "mode_str": mode_str,
-          "volts": milivolts/1000,
-          "amps": milliamps/1000,
-          "watts":  round((milivolts/1000) * (milliamps/1000), 2)}
+          "panelSN": panelSN,}
 
     return rv
 
@@ -214,8 +225,17 @@ def run_test(panelSN=None):
         return ts_str[:-4]
 
     global logger, po
+    global START_RESISTANCE, END_RESISTANCE, RESISTANCE_STEP
 
     test_readings = []
+
+
+    logger.info(f"set initial Load resistance ")
+    r = 100000
+    logger.info(f"Set to {r/10} ohms")
+    send_cmd(cmd_dict["CR_SETTING"], r)
+    time.sleep(0.5)
+
 
     # Capture VOC
     VOC_readings = read_cmd(panelSN)
@@ -223,11 +243,6 @@ def run_test(panelSN=None):
 
     logger.info(f"set CR mode: (Constant Resistance)")
     send_cmd(cmd_dict["LOAD_MODE"], mode_dict['CR'])
-
-    logger.info(f"set initial Load resistance ")
-    r = 150
-    logger.info(f"Set to {r/10} ohms")
-    send_cmd(cmd_dict["CR_SETTING"], r)
 
     VOC_readings['resistance'] = r
     VOC_readings['timestamp'] = timestamp()
@@ -237,27 +252,23 @@ def run_test(panelSN=None):
     send_cmd(cmd_dict["LOAD_ONOFF"], 1)
 
     logger.info(f"Run test for decreasing Load resistance ")
+
     # for r in range(200, 0, -10):
-    for r in range(200, 50, -10):
+    # for r in range(400, 50, -5):
+    logger.info(f"{START_RESISTANCE=}, {END_RESISTANCE=}, {RESISTANCE_STEP=}")
+    for r in range(START_RESISTANCE, END_RESISTANCE, RESISTANCE_STEP):
+
         # readings=None
-        logger.info(f"Set to {r/10} ohms")
+        logger.info(f"Set to {r/10.0} ohms")
         send_cmd(cmd_dict["CR_SETTING"], r)
+        time.sleep((0.5))
         readings = read_cmd(panelSN)
-        readings['resistance'] = r
+        readings['resistance'] = r / 10.0
         readings['timestamp'] = timestamp()
         test_readings.append(readings)
 
         logger.info(f"Readings: {readings}")
 
-    '''
-    logger.info(f"Try to set Load Ohms")
-    for r in range(200, 0, -10):
-        logger.info(f"Set to {r/10} ohms")
-        send_cmd(0x011A, r) 
-    send_cmd(0x011A, 0)
-    print()
-    time.sleep(3)
-    '''
     logger.info(f"Set Load OFF ")
     send_cmd(cmd_dict["LOAD_ONOFF"], 0)
 
@@ -271,7 +282,7 @@ def run_test(panelSN=None):
 
 def main():
     """main"""
-    global logger, po
+    global logger, po, OUTDIR
 
     logger = create_logger("console")
 
@@ -294,8 +305,11 @@ def main():
             sys.exit()
 
 
-    out_dir = "./results/"
-    file_name = out_dir + f"MPPT_Test_{panelSN}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+    # out_dir = "/Users/apple/Downloads/PV_Panel_MPPT_Results"
+    # file_name = OUTDIR + f"MPPT_Test_{panelSN}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+
+    file_name = f"MPPT_Test_{panelSN}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+    file_name =  os.path.join(OUTDIR, file_name)
 
     logger.info(f"panelSN is {panelSN}\n")
 
@@ -308,6 +322,21 @@ def main():
         writer.writerows(results)
 
     logger.info(f"\nResults in {file_name}\n")
+
+
+    max_watts = 0.0
+    r_at_max_w = 0
+    v_at_max_watts = 0
+
+    for i in results:
+        if i['watts'] > max_watts:
+            max_watts = i['watts'];
+            r_at_max_w = i['resistance']
+            v_at_max_watts = i['volts']
+
+    logger.info(f"\n-----FINAL RESULTS: {datetime.now().strftime('%Y%m%d %H:%M:%S')} Panel {panelSN} "
+                f"@ {r_at_max_w} ohms, {v_at_max_watts} volts,  MAX WATTS: {max_watts}\n{80*'-'}\n")
+
 
 
 if __name__ == "__main__":
