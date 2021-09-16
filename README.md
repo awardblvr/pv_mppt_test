@@ -2,9 +2,7 @@
 
 Test MPPT on Solar Panels with [Kunkin KP184](https://www.amazon.com/Electronic-Battery-Capacity-Internal-Resistance/dp/B076Q8PX5T) ([review](https://www.youtube.com/watch?v=mPRSRuvg3M8))
 
-
-
-![](/Users/andrewward/Documents/Projects/PV_Solar_MPPT_test/Images/Kunpin_KP184.png)
+![](https://github.com/awardblvr/pv_mppt_test/blob/13c3523d5785c52281b8ff4168af6132b037a7ac/Images/Kunpin_KP184.png)
 
 OK So.. This is not like all the fancy algorithms created by scientists:
 
@@ -15,8 +13,6 @@ OK So.. This is not like all the fancy algorithms created by scientists:
 and many more...
 
 It is simple test which starts the load resistance very high to catch VOC.  Then drops it down to 50 Ohms or so, and reads voltage, current and calculates the wattage.. Then drops the load resistance by 1/2 ohm and does it all again, recordig the load resistance, voltage, curremt, and the calculated wattage.. This is my form of MPPT calculation.. Hopefully others will correct me with suggestions or improvements.. But, it SEEMS to kinda work and the results seem pretty close to the ELEJOY [WS400A Solar Panel MPPT Tester](https://www.amazon.com/s?k=WS400A&ref=nb_sb_noss_2)  (or cheaply on Aliexpress: [WS400A](https://www.aliexpress.com/wholesale?catId=0&initiative_id=SB_20210915161626&SearchText=WS400A).)
-
-
 
 ![](/Users/andrewward/Documents/Projects/PV_Solar_MPPT_test/Images/Elejoy_WS400A.png)
 
