@@ -2,6 +2,8 @@
 
 Test MPPT on Solar Panels with [Kunkin KP184](https://www.amazon.com/Electronic-Battery-Capacity-Internal-Resistance/dp/B076Q8PX5T) ([review](https://www.youtube.com/watch?v=mPRSRuvg3M8))
 
+
+
 OK So.. This is not like all the fancy algorithms created by scientists:
 
 [https://www.sciencedirect.com/science/article/abs/pii/S096014811500244X](https://www.sciencedirect.com/science/article/abs/pii/S096014811500244X),
@@ -12,14 +14,13 @@ and many more...
 
 It is simple test which starts the load resistance very high to catch VOC.  Then drops it down to 50 Ohms or so, and reads voltage, current and calculates the wattage.. Then drops the load resistance by 1/2 ohm and does it all again, recordig the load resistance, voltage, curremt, and the calculated wattage.. This is my form of MPPT calculation.. Hopefully others will correct me with suggestions or improvements.. But, it SEEMS to kinda work and the results seem pretty close to the ELEJOY [WS400A Solar Panel MPPT Tester](https://www.amazon.com/s?k=WS400A&ref=nb_sb_noss_2)  (or cheaply on Aliexpress: [WS400A](https://www.aliexpress.com/wholesale?catId=0&initiative_id=SB_20210915161626&SearchText=WS400A).)
 
-It produces a .CSV file in OUTDIR (See code) with the date stamp and  panel S/N...   (Used [barcodetopc.com](https://barcodetopc.com) and the IOS app "[Barcode to PC: WiFi Scanner](https://apps.apple.com/app/id1180168368)" to scan panel S/N sticker and enter it into the prompt, after which testing begins... Takes a couple minutes per panel).   You may havbe to modify the port name a bit to get it to find your USB Serial port device.)
+It produces a .CSV file in OUTDIR (See code) with the date stamp and  panel S/N...   (Used [barcodetopc.com](https://barcodetopc.com) and the IOS app "[Barcode to PC: WiFi Scanner](https://apps.apple.com/app/id1180168368)" to scan panel S/N sticker and enter it into the prompt, after which testing begins... Takes a couple minutes per panel).   You may have to modify the port name a bit to get it to find your USB Serial port device.)
 
 Feel free to use it and advise why it is wrong, if so.
 
 NOTE.. The checksum calculation is REQUIRED to send commands to the KP184.. The manual is WRONG in their calculation..  It is CORRECT in my code and you can see what the difference is in Get_CRC16RTU().
 
 ```
-
 Volts,volts,amps,watts,state,mode_str,panelSN,resistance,timestamp
 44.543,44.543,0.0,0.0,0,CR,B41J00052894,100000,20210913_112215.16
 43.542,43.542,1.086,47.29,1,CR,B41J00052894,40.0,20210913_112216.53
