@@ -29,10 +29,8 @@ pp_str2 = pprint.PrettyPrinter(indent=2).pformat
 /dev/cu.usbserial  /dev/tty.usbserial
 '''
 
-PORT = 1
-PORT = '/dev/cu.usbserial'
 PORT = '/dev/cu.usbserial-14110'
-OUTDIR = '/Users/apple/Downloads/PV_Panel_MPPT_Results'
+OUTDIR = '$HOME/Downloads/PV_Panel_MPPT_Results'
 
 START_RESISTANCE =   400        # in ohms * 10
 END_RESISTANCE   =   40
@@ -304,9 +302,6 @@ def main():
         if not len(panelSN):
             sys.exit()
 
-
-    # out_dir = "/Users/apple/Downloads/PV_Panel_MPPT_Results"
-    # file_name = OUTDIR + f"MPPT_Test_{panelSN}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
 
     file_name = f"MPPT_Test_{panelSN}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
     file_name =  os.path.join(OUTDIR, file_name)
