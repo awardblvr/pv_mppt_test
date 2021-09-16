@@ -18,7 +18,9 @@ Feel free to use it and advise why it is wrong, if so.
 
 NOTE.. The checksum calculation is REQUIRED to send commands to the KP184.. The manual is WRONG in their calculation..  It is CORRECT in my code and you can see what the difference is in Get_CRC16RTU().
 
-```Volts,volts,amps,watts,state,mode_str,panelSN,resistance,timestamp
+```
+
+Volts,volts,amps,watts,state,mode_str,panelSN,resistance,timestamp
 44.543,44.543,0.0,0.0,0,CR,B41J00052894,100000,20210913_112215.16
 43.542,43.542,1.086,47.29,1,CR,B41J00052894,40.0,20210913_112216.53
 43.523,43.523,1.1,47.88,1,CR,B41J00052894,39.5,20210913_112217.62
