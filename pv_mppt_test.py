@@ -5,7 +5,9 @@
 import os
 # from os.path import  *
 import os.path
-
+from pathlib import Path
+import argparse
+import re
 import sys
 import time
 # import datetime
@@ -18,6 +20,15 @@ from utils import *
 import traceback
 import pprint
 import csv
+import pandas as pd
+from tabulate import tabulate
+from collections import OrderedDict
+from operator import itemgetter
+
+TEST_SHORTEN_FACTOR = 20
+HIGH_CURRENT_SHORTEN_FACTOR = 20
+
+SkipHighCurrentCheck=False
 
 LOGGER = logging.getLogger("PV_Tester")
 
@@ -29,12 +40,25 @@ pp_str2 = pprint.PrettyPrinter(indent=2).pformat
 /dev/cu.usbserial  /dev/tty.usbserial
 '''
 
-PORT = '/dev/cu.usbserial-14110'
-OUTDIR = '$HOME/Downloads/PV_Panel_MPPT_Results'
+PORT = '/dev/cu.usbserial' # /dev/cu.usbserial-14110'
+DEFAULT_USER_OUTDIR = 'Downloads/PV_Panel_MPPT_Results'
 
-START_RESISTANCE =   400        # in ohms * 10
-END_RESISTANCE   =   40
-RESISTANCE_STEP  =   -5
+test_steps = {
+    "CV_SETTING": {"param_start": 0,
+                    "param_end": 50000,
+                    "param_step": 100},
+    "CC_SETTING": {"param_start":1,
+                    "param_end":1,
+                    "param_step":1},
+    "CR_SETTING": {"param_start":400,
+                    "param_end": 1,
+                    "param_step": -1},
+    "CW_SETTING": {"param_start":1,
+                    "param_end": 1,
+                    "param_step": 1},
+}
+
+INTER_STEP_SEC = 0.01
 
 logger = {}
 po = None
@@ -112,7 +136,8 @@ def send_cmd_bytes(cmd):
 
     # serial.Serial(port=PORT, baudrate=9600, bytesize=8, parity='N', stopbits=1, xonxoff=0)
     # Set read timeout to 3 Sec
-    po = serial.Serial(port=PORT, baudrate=9600, timeout=0.25) # , timeout=0.2)
+    # po = serial.Serial(port=PORT, baudrate=9600, timeout=0.25) # , timeout=0.2)
+    po = serial.Serial(port=PORT, baudrate=115200, timeout=0.25) # , timeout=0.2)
 
     bytes_written = po.write(cmd)
     # logger.info(f"{bytes_written=}")
@@ -172,7 +197,7 @@ def send_cmd(reg_addr, reg_value ):
     return
 
 
-def read_cmd(panelSN):
+def read_cmd(panelSN, idx, prog_value):
     """
     """
     cmd_base = [0x01,     # device address
@@ -206,66 +231,246 @@ def read_cmd(panelSN):
     else:
         logger.error(f"ERROR: unrecognized pattern for mode_state: {mode:#x}")
 
-    rv = {"Volts": milivolts/1000.0,
-          "volts": milivolts/1000.0,
-          "amps": milliamps/1000.0,
-          "watts":  round((milivolts/1000.0) * (milliamps/1000.0), 2),
-          "state": state,
-          "mode_str": mode_str,
-          "panelSN": panelSN,}
+    # rv = {"idx": idx,
+    #       "volts": milivolts/1000.0,
+    #       "amps": milliamps/1000.0,
+    #       "watts":  round((milivolts/1000.0) * (milliamps/1000.0), 2),
+    #       "prog_value": prog_value,
+    #       "state": state,
+    #       "mode_str": mode_str,
+    #       "panelSN": panelSN,
+    #       }
+
+    rv = OrderedDict([("idx", idx),
+                      ("volts", milivolts/1000.0),
+                      ("amps", milliamps/1000.0),
+                      ("watts",  round((milivolts/1000.0) * (milliamps/1000.0), 2)),
+                      # ("prog_value", prog_value),
+                      ("state", state),
+                      ("mode_str", mode_str),
+                      ("panelSN", panelSN),
+                      ('param', None),
+                      ('Prog Val', None),
+                      ('Prog Units', None),
+                      ('timestamp', None)])
 
     return rv
 
 
-def run_test(panelSN=None):
-    def timestamp():
-        ts_str =  f"{datetime.now().strftime('%Y%m%d_%H%M%S.%f')}"
-        return ts_str[:-4]
-
-    global logger, po
-    global START_RESISTANCE, END_RESISTANCE, RESISTANCE_STEP
-
-    test_readings = []
-
-
-    logger.info(f"set initial Load resistance ")
-    r = 100000
-    logger.info(f"Set to {r/10} ohms")
-    send_cmd(cmd_dict["CR_SETTING"], r)
+def capture_ISC(panelSN, idx=-1):
+    # Capture ISC
+    param = 1
+    logger.info(f"Capture Isc, Set to {param / 10.0} ohms")
+    send_cmd(cmd_dict["LOAD_ONOFF"], 0)
+    send_cmd(cmd_dict["LOAD_MODE"], mode_dict['CR'])
+    send_cmd(cmd_dict["CR_SETTING"], param)
+    send_cmd(cmd_dict["LOAD_ONOFF"], 1)
     time.sleep(0.5)
 
+    # Capture ISC
+    ISC_readings = read_cmd(panelSN, idx, param)
+    ISC_readings['Prog Val'] = param / 10.0
+    ISC_readings['Prog Units'] = "ohms"
+
+    # logger.info(f"ISC Readings: {ISC_readings}")
+    logger.info(f"ISC Readings: {ISC_readings['amps']} amps, "
+                f"{ISC_readings['volts']} volts, {ISC_readings['watts']} watts, {ISC_readings['mode_str']} mode, "
+                f"Programmed: {ISC_readings['Prog Val']} {ISC_readings['Prog Units']}")
+
+    send_cmd(cmd_dict["LOAD_ONOFF"], 0)
+    return(ISC_readings)
+
+
+def capture_VOC(panelSN, idx=-1):
+    logger.info(f"Capture Voc set to High Z (Load OFF)")
+    send_cmd(cmd_dict["LOAD_ONOFF"], 0)
+    param = 80000
+    time.sleep(0.5)
 
     # Capture VOC
-    VOC_readings = read_cmd(panelSN)
-    logger.info(f"Readings: {VOC_readings}")
+    VOC_readings = read_cmd(panelSN, idx, param)
+    VOC_readings['Prog Val'] = param / 10.0
+    VOC_readings['Prog Units'] = "ohms"
 
-    logger.info(f"set CR mode: (Constant Resistance)")
-    send_cmd(cmd_dict["LOAD_MODE"], mode_dict['CR'])
+    # logger.info(f"Voc Readings: {VOC_readings}")
+    logger.info(f"Voc Readings: {VOC_readings['amps']} amps, "
+                f"{VOC_readings['volts']} volts, {VOC_readings['watts']} watts, {VOC_readings['mode_str']} mode, "
+                f"Programmed: {VOC_readings['Prog Val']} {VOC_readings['Prog Units']}")
 
-    VOC_readings['resistance'] = r
-    VOC_readings['timestamp'] = timestamp()
+    return VOC_readings
+
+
+def timestamp():
+    ts_str =  f"{datetime.now().strftime('%Y%m%d_%H%M%S.%f')}"
+    return ts_str[:-4]
+
+
+def run_test_type(panelSN, type):
+
+    global logger, po
+
+    '''
+    "CV_SETTING": 0x0112,
+    "CC_SETTING": 0x0116,
+    "CR_SETTING": 0x011A,
+    "CW_SETTING": 0x011E,
+    '''
+
+    param_start = test_steps[type]['param_start']
+    param_end = test_steps[type]['param_end']
+    param_step = test_steps[type]['param_step']
+    test_readings = []
+
+    index_offset = 0
+    VOC_readings = capture_VOC(panelSN, index_offset)
+    VOC_readings['timestamp'] = "TS "+str(timestamp())
+    VOC_readings['param'] = "VOC"
+    VOC_readings['Peak'] = ""
+    index_offset += 1
     test_readings.append(VOC_readings)
 
-    logger.info(f"Set Load ON ")
-    send_cmd(cmd_dict["LOAD_ONOFF"], 1)
+    ISC_readings = capture_ISC(panelSN, index_offset)
+    ISC_readings['timestamp'] = "TS "+str(timestamp())
+    ISC_readings['param'] = "ISC"
+    ISC_readings['Peak'] = ""
+    index_offset += 1
+    test_readings.append(ISC_readings)
 
-    logger.info(f"Run test for decreasing Load resistance ")
+    # logger.info(f"Readings: {VOC_readings}")
 
-    # for r in range(200, 0, -10):
-    # for r in range(400, 50, -5):
-    logger.info(f"{START_RESISTANCE=}, {END_RESISTANCE=}, {RESISTANCE_STEP=}")
-    for r in range(START_RESISTANCE, END_RESISTANCE, RESISTANCE_STEP):
+    value_divisor = None
 
-        # readings=None
-        logger.info(f"Set to {r/10.0} ohms")
-        send_cmd(cmd_dict["CR_SETTING"], r)
-        time.sleep((0.5))
-        readings = read_cmd(panelSN)
-        readings['resistance'] = r / 10.0
-        readings['timestamp'] = timestamp()
+    if type == "CR_SETTING":
+        units= "ohms"
+        logger.info(f"set CR mode: (Constant Resistance)")
+        # send_cmd(cmd_dict["LOAD_MODE"], mode_dict['CR'])
+        load_test_mode = mode_dict['CR']
+        value_divisor = 10.0
+
+    elif type == "CC_SETTING":
+        units= "amps"
+        logger.info(f"set CC mode: (Constant Current)")
+        # send_cmd(cmd_dict["LOAD_MODE"], mode_dict['CC'])
+        load_test_mode = mode_dict['CC']
+        value_divisor = 1000.0
+
+    elif type == "CV_SETTING":
+        units= "volts"
+        logger.info(f"set CV mode: (Constant Voltage)")
+        # send_cmd(cmd_dict["LOAD_MODE"], mode_dict['CV'])
+        load_test_mode = mode_dict['CV']
+        value_divisor = 1000.0
+
+    elif type == "CW_SETTING":
+        units= "watts"
+        logger.info(f"set CE mode: (Constant Wattage)")
+        # send_cmd(cmd_dict["LOAD_MODE"], mode_dict['CW'])
+        load_test_mode = mode_dict['CW']
+        value_divisor = 1.0
+
+    else:
+        logger.error("UNRECOGNIZED test type")
+        return
+
+
+    # logger.info(f"Set Load OFF")
+    # send_cmd(cmd_dict["LOAD_ONOFF"], 0)
+
+    if not SkipHighCurrentCheck:
+        # EXPERIMENT with Getting Highest Current
+
+        high_param_start = test_steps['CR_SETTING']['param_start']
+        high_param_end   = test_steps['CR_SETTING']['param_end']
+        high_param_step  = test_steps['CR_SETTING']['param_step']
+
+        logger.info(f"HIGH Sweep: Start @ {high_param_start}, End @ {high_param_end}, Step {high_param_step}")
+
+        steps = len(range(high_param_start, high_param_end, high_param_step * HIGH_CURRENT_SHORTEN_FACTOR))
+
+        high_readings = []
+        # for param_idx, param in enumerate(range(high_param_start, high_param_end, high_param_step*10)):
+        param_idx=0
+        for par_idx, param in enumerate(range(high_param_start, high_param_end, high_param_step * HIGH_CURRENT_SHORTEN_FACTOR)):
+            if par_idx == 0:
+                logger.info(f"TURNING LOAD OFF")
+                send_cmd(cmd_dict["LOAD_ONOFF"], 0)
+                # time.sleep(0.5)
+                send_cmd(cmd_dict["LOAD_MODE"], mode_dict['CR'])
+                # time.sleep(0.5)
+
+            # logger.info(f"HIGH Step {param_idx} of {steps} --> {param /10} ohms")
+            send_cmd(cmd_dict['CR_SETTING'], param)
+            if par_idx == 0:
+                logger.info(f"TURNING LOAD ON")
+                send_cmd(cmd_dict["LOAD_ONOFF"], 1)
+                # send_cmd(cmd_dict["LOAD_MODE"], mode_dict['CR'])
+
+            high_reading = read_cmd(panelSN, param_idx, param)
+            # logger.info(f"Got: {high_reading=}")
+            high_reading['param'] = "RES LOAD CR"
+            high_reading['Prog Val'] = param / 10.0
+            high_reading['Prog Units'] = "ohms"
+            high_reading['timestamp'] = "TS "+str(timestamp())
+            high_reading['Peak'] = ""   
+            logger.info(f"HIGH Step {param_idx} of {steps} --> {param /10} ohms: {high_reading['amps']} amps, "
+                        f"{high_reading['volts']} volts, {high_reading['watts']} watts, {high_reading['mode_str']} mode, "
+                        f"Programmed: {high_reading['Prog Val']} {high_reading['Prog Units']}")
+            high_readings.append(high_reading)
+
+            param_idx += 1
+
+        # logger.info(f"HIGH Readings: \n{pp_str(high_readings)}")
+        # logger.info(f"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx")
+        highest_current = max(high_readings, key=lambda x: x['amps'])
+        print(f"{80*'-'}\n"
+                    f"CR to find values @ peak amps: @ {highest_current['amps']} Amps"
+                    f"@ {highest_current['volts']} Volts, "
+                    # f"{highest_current['Prog Val']/10.0} Ohms, {highest_current['watts']} Watts"
+                    f"\n{80*'-'}")
+    else:
+        highest_current = None
+        high_readings=[]
+
+
+    logger.info(f"{type=}: from {param_start} to {param_end}, {param_step=}")
+    steps = len(range(param_start, param_end, param_step * TEST_SHORTEN_FACTOR))
+
+    target_reached_flag = None
+    for param_idx, param in enumerate(range(param_start, param_end, param_step * TEST_SHORTEN_FACTOR)):
+        if not target_reached_flag and  param > 38000:
+            logger.info(f"Reached 38 Volts")
+            target_reached_flag = True;
+
+        if param_idx == 0:
+            logger.info(f"TURNING LOAD OFF")
+            send_cmd(cmd_dict["LOAD_ONOFF"], 0)
+            # time.sleep(0.5)
+            send_cmd(cmd_dict["LOAD_MODE"], load_test_mode)
+            send_cmd(cmd_dict["LOAD_ONOFF"], 1)
+            # time.sleep(0.5)
+
+        if value_divisor is not None:
+            param_disp = param / value_divisor
+        else:
+            param_disp = param
+
+        # logger.info(f"Step {param_idx} of {steps}  {type}--> {param_disp} {units}")
+        send_cmd(cmd_dict[type], param)
+        time.sleep(INTER_STEP_SEC)
+        readings = OrderedDict()
+        readings = read_cmd(panelSN, (index_offset + param_idx), param)
+        readings['param'] = type
+        readings['Prog Val'] = param / value_divisor
+        readings['Prog Units'] = units
+        readings['timestamp'] = "TS "+str(timestamp())
+        readings['Peak'] = ""
+
+        logger.info(f"Test Step {param_idx} of {steps} --> {readings['amps']} amps, "
+                    f"{readings['volts']} volts, {readings['watts']} watts, {readings['mode_str']} mode, "
+                    f"Programmed: {readings['Prog Val']} {readings['Prog Units']}")
+
         test_readings.append(readings)
-
-        logger.info(f"Readings: {readings}")
+        # logger.info(f"Readings: {readings}")
 
     logger.info(f"Set Load OFF ")
     send_cmd(cmd_dict["LOAD_ONOFF"], 0)
@@ -275,64 +480,136 @@ def run_test(panelSN=None):
     # print(f"Test Results:\n {test_readings}")
 
 
-    return test_readings
+    max_idx, max_member = max(enumerate(test_readings), key=lambda item: item[1]['watts'])
+
+    test_readings[max_idx]['Peak'] = "MAX"
+
+    return test_readings, high_readings, highest_current
 
 
-def main():
+def main(arguments=None):
     """main"""
-    global logger, po, OUTDIR
+    global logger, po, SkipHighCurrentCheck
 
     logger = create_logger("console")
+    parser = argparse.ArgumentParser(
+        description=__doc__,
+        formatter_class=argparse.RawDescriptionHelpFormatter)
+    # parser.add_argument('infile', help="Input file")  # type=argparse.FileType('r'))
+    # parser.add_argument('-o', '--outfile', help="Output file",
+    #                     default=sys.stdout, type=argparse.FileType('w'))
 
-    po = serial.Serial(port=PORT, baudrate=115200, timeout=0.5) # , timeout=0.2)
+    parser.add_argument('--sn',
+                       dest='serial_num',
+                       default=os.environ.get('SKIP_SN', f'NONE_{timestamp()}'),
+                       # default=os.environ.get('SKIP_SN', None),
+                       action="store_const",
+                       const=f'SN_SKIP_{timestamp()}',
+                       help=(f"Use provides S/N or env's 'SKIP_SN' (currently {os.environ.get('SKIP_SN', ' ')}"))
+
+    parser.add_argument('--skip_high_current' ,
+                       dest='skip_high_current',
+                       default=False,
+                       action="store_const",
+                       const=True,
+                       help=(f"Skip High Current via Constant Resistance"))
+
+    parser.add_argument('--results_dir',
+                       nargs=1,
+                       dest='results_dir',
+                       default=[os.environ.get('OUTDIR', os.path.join(Path.home(), DEFAULT_USER_OUTDIR))],
+                       help=(f'Dir for storing results: (or use \'OUTDIR\': Defaults to {os.path.join(Path.home(), DEFAULT_USER_OUTDIR)})'))
+
+    args = parser.parse_args(arguments)
+
+    # Convert list to string
+    args.results_dir = args.results_dir[0]
+
+    SkipHighCurrentCheck = args.skip_high_current
+
+    logger.info(f"ARGS:  {args=}")
+
+
+    po = serial.Serial(port=PORT, baudrate=115200, timeout=0.2) # , timeout=0.2)
 
     logger.info(f"Set Load OFF ")
     send_cmd(cmd_dict["LOAD_ONOFF"], 0)
 
-    panelSN = input("Panel S/N? :")
+    if (re.match("SN_SKIP.*", args.serial_num)) : #  or
+        # re.match("NONE_.*", args.serial_num) ):
 
-    while True:
-        print(f"{panelSN=}")
-        if len(panelSN) == 12:
-            break
-        print(f"Try again, or enter (blank) to quit")
-        panelSN = input("Panel S/N? (or text) ")
-        if len(panelSN):
-            break
-        if not len(panelSN):
-            sys.exit()
+        panelSN = args.serial_num
+    else:
+        panelSN = input("Panel S/N? :")
+
+        while True:
+            print(f"{panelSN=}")
+            if len(panelSN) == 12:
+                break
+            print(f"Try again, or enter (blank) to quit")
+            panelSN = input("Panel S/N? (or text) ")
+            if len(panelSN):
+                break
+            if not len(panelSN):
+                sys.exit()
 
 
-    file_name = f"MPPT_Test_{panelSN}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
-    file_name =  os.path.join(OUTDIR, file_name)
+    # results = run_test_type(panelSN, "CR_SETTING", START_RESISTANCE, END_RESISTANCE, RESISTANCE_STEP)
+    results, high_readings, high_reading = run_test_type(panelSN, "CV_SETTING")
 
-    logger.info(f"panelSN is {panelSN}\n")
-
-    results = run_test(panelSN)
     header = list(results[0].keys())
 
-    with open(file_name, 'w', encoding='UTF8', newline='') as f:
+    logger.info(f"\nHeader Rows: {header}\n")
+
+    # print(f"results=\n{pp_str(results)}")
+
+    os.makedirs(args.results_dir, exist_ok=True)
+
+    file_name_base = f"MPPT_Test_{panelSN}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+    test_data_file_name =  os.path.join(args.results_dir, f"{file_name_base}")
+
+    logger.info(f"panelSN is {panelSN}\n")
+    with open(test_data_file_name, 'w', encoding='UTF8', newline='') as f:
         writer = csv.DictWriter(f, fieldnames=header)
         writer.writeheader()
         writer.writerows(results)
+    logger.info(f"\nResults in {test_data_file_name}\n")
 
-    logger.info(f"\nResults in {file_name}\n")
+    high_current_data_file_name =  os.path.join(args.results_dir, f"{file_name_base}_high_current")
+    with open(high_current_data_file_name, 'w', encoding='UTF8', newline='') as f:
+        writer = csv.DictWriter(f, fieldnames=header)
+        writer.writeheader()
+        writer.writerows(high_readings)
+
+    lst_str_cols = ['timestamp']
+    dict_dtypes = {x: 'str' for x in lst_str_cols}
+    df = pd.read_csv(test_data_file_name, dtype=dict_dtypes)
+
+    # logger.info(f"\n-----FINAL RESULTS: {datetime.now().strftime('%Y%m%d %H:%M:%S')} Panel {panelSN} "
+    #             f"@ {r_at_max_w/10.0} ohms, {v_at_max_watts} volts,  MAX WATTS: {max_watts}\n{80*'-'}\n")
+
+    # logger.info(f"\n-----FINAL RESULTS: ")
+    # print(f"{tabulate([df['watts'] == df['watts'].max()], headers=header )}")   # df.columns
+
+    # print(f"{30*'+'}\n" + df + f"\n{30*'+'}")
+    print(f"TEST DATA {30*'+'}\n")
+
+    # pd.set_option('display.max_columns', 20)  # or 1000
+    # pd.set_option('display.max_rows', 1000)  # or 1000
+    # pd.set_option('display.max_colwidth', 200)  # or 199
+
+    # print(df)
+    print(f"{tabulate(df, headers=df.columns)}")
 
 
-    max_watts = 0.0
-    r_at_max_w = 0
-    v_at_max_watts = 0
+    df = pd.read_csv(high_current_data_file_name, dtype=dict_dtypes)
 
-    for i in results:
-        if i['watts'] > max_watts:
-            max_watts = i['watts'];
-            r_at_max_w = i['resistance']
-            v_at_max_watts = i['volts']
+    # print(f"{30*'+'}\n" + df + f"\n{30*'+'}")
+    print(f"\n{30*'~'} HIGH CURRENT CHECK DATA {30*'~'}")
 
-    logger.info(f"\n-----FINAL RESULTS: {datetime.now().strftime('%Y%m%d %H:%M:%S')} Panel {panelSN} "
-                f"@ {r_at_max_w} ohms, {v_at_max_watts} volts,  MAX WATTS: {max_watts}\n{80*'-'}\n")
+    print(f"{tabulate(df, headers=df.columns)}")
 
 
 
 if __name__ == "__main__":
-    main()
+    main(sys.argv[1:])

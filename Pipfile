@@ -5,6 +5,9 @@ name = "pypi"
 
 [packages]
 pyserial = "*"
+matplotlib = "*"
+pandas = "*"
+tabulate = "*"
 
 [dev-packages]
 
