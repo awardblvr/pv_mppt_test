@@ -25,8 +25,8 @@ from tabulate import tabulate
 from collections import OrderedDict
 from operator import itemgetter
 
-TEST_SHORTEN_FACTOR = 20
-HIGH_CURRENT_SHORTEN_FACTOR = 20
+TEST_SHORTEN_FACTOR = 1
+HIGH_CURRENT_SHORTEN_FACTOR = 1
 
 SkipHighCurrentCheck=False
 
@@ -217,9 +217,16 @@ def read_cmd(panelSN, idx, prog_value):
     milliamps = int.from_bytes([ord(x) for x in response[8:11]], "big")
     # logger.info(f"READ milliamps: " + str(''.join('%02x' % ord(i) for i in response[8:11] if i)) + f" which is {milliamps} milliamps")
 
+    mode_str = "??"
+    Remote_Vsense = None
+
     mode_state = ord(response[3])
+    logger.error(f"AW_DEBUG: response[3] {response[3]}  is mode_state raw {hex(mode_state)}")
     state = mode_state & 0x1
-    mode = mode_state >> 1
+    mode = (mode_state >> 1) & 0x3
+    if (mode_state >> 1) > 0x3:
+        Remote_Vsense = True
+
     if mode == 0:
         mode_str = "CV"
     elif mode == 1:
@@ -230,6 +237,9 @@ def read_cmd(panelSN, idx, prog_value):
         mode_str = "CP"
     else:
         logger.error(f"ERROR: unrecognized pattern for mode_state: {mode:#x}")
+
+    if Remote_Vsense:
+        mode_str += "-R"
 
     # rv = {"idx": idx,
     #       "volts": milivolts/1000.0,
@@ -411,7 +421,7 @@ def run_test_type(panelSN, type):
             high_reading['Prog Val'] = param / 10.0
             high_reading['Prog Units'] = "ohms"
             high_reading['timestamp'] = "TS "+str(timestamp())
-            high_reading['Peak'] = ""   
+            high_reading['Peak'] = ""
             logger.info(f"HIGH Step {param_idx} of {steps} --> {param /10} ohms: {high_reading['amps']} amps, "
                         f"{high_reading['volts']} volts, {high_reading['watts']} watts, {high_reading['mode_str']} mode, "
                         f"Programmed: {high_reading['Prog Val']} {high_reading['Prog Units']}")
